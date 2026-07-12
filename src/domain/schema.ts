@@ -61,7 +61,7 @@ export const thinkingEdgeSchema = z.object({
   relation: relationSchema,
 });
 
-const baseThinkingGraphSchema = z.object({
+export const thinkingGraphDraftSchema = z.object({
   schemaVersion: z.literal(1),
   northStar: z.object({
     statement: z.string().min(1),
@@ -78,7 +78,7 @@ const baseThinkingGraphSchema = z.object({
   parkingLot: z.array(z.string()),
 });
 
-export const thinkingGraphSchema = baseThinkingGraphSchema.superRefine((graph, context) => {
+export const thinkingGraphSchema = thinkingGraphDraftSchema.superRefine((graph, context) => {
   const nodeIds = new Set<string>();
   for (const node of graph.nodes) {
     if (nodeIds.has(node.id)) {
@@ -148,7 +148,7 @@ export const thinkingGraphSchema = baseThinkingGraphSchema.superRefine((graph, c
 
 export type ThinkingNode = z.infer<typeof thinkingNodeSchema>;
 export type ThinkingEdge = z.infer<typeof thinkingEdgeSchema>;
-export type ThinkingGraph = z.infer<typeof baseThinkingGraphSchema>;
+export type ThinkingGraph = z.infer<typeof thinkingGraphDraftSchema>;
 export type ViewKind = z.infer<typeof viewKindSchema>;
 export type Relation = z.infer<typeof relationSchema>;
 

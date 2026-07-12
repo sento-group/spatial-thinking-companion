@@ -3,7 +3,10 @@ import { z } from "zod";
 
 import { createLocalInitialMap } from "@/ai/local-fallback";
 import { allowAiRequest } from "@/ai/rate-limit";
-import { initialMapResponseSchema } from "@/ai/schemas";
+import {
+  initialMapDraftResponseSchema,
+  normalizeInitialMapResponse,
+} from "@/ai/schemas";
 import { SPATIAL_THINKING_SYSTEM } from "@/ai/prompt";
 
 const requestSchema = z.object({ input: z.string().min(1).max(12_000) });
@@ -17,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
     const { output } = await generateText({
       model: gateway(process.env.AI_MODEL ?? "anthropic/claude-haiku-4.5"),
       system: SPATIAL_THINKING_SYSTEM,
-      output: Output.object({ schema: initialMapResponseSchema }),
+      output: Output.object({ schema: initialMapDraftResponseSchema }),
       prompt: `次の入力から初期思考グラフを生成してください。\n\n${body.data.input}`,
       providerOptions: {
         gateway: {
@@ -26,7 +29,7 @@ export async function POST(request: Request): Promise<Response> {
         },
       },
     });
-    return Response.json(output);
+    return Response.json(normalizeInitialMapResponse(output));
   } catch (error) {
     console.error("AI Gateway initial map failed; using local fallback", error);
     return Response.json(createLocalInitialMap(body.data.input));
