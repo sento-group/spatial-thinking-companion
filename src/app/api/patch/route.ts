@@ -24,9 +24,6 @@ export async function POST(request: Request): Promise<Response> {
   if (!body.success) return Response.json({ error: "入力を確認してください" }, { status: 400 });
 
   const { message, context } = body.data;
-  const hasGateway = Boolean(process.env.VERCEL_OIDC_TOKEN || process.env.AI_GATEWAY_API_KEY);
-  if (!hasGateway) return Response.json(createLocalPatch(message, context.activeBranchId));
-
   try {
     const { output } = await generateText({
       model: gateway(process.env.AI_MODEL ?? "anthropic/claude-haiku-4.5"),
