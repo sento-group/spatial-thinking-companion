@@ -18,13 +18,14 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const { output } = await generateText({
-      model: process.env.AI_MODEL ?? "openai/gpt-5.4-mini",
+      model: process.env.AI_MODEL ?? "openai/gpt-5.4",
       system: SPATIAL_THINKING_SYSTEM,
       output: Output.object({ schema: initialMapResponseSchema }),
       prompt: `次の入力から初期思考グラフを生成してください。\n\n${body.data.input}`,
     });
     return Response.json(output);
-  } catch {
+  } catch (error) {
+    console.error("AI Gateway initial map failed; using local fallback", error);
     return Response.json(createLocalInitialMap(body.data.input));
   }
 }

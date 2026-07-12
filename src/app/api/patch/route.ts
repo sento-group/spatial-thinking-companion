@@ -29,13 +29,14 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const { output } = await generateText({
-      model: process.env.AI_MODEL ?? "openai/gpt-5.4-mini",
+      model: process.env.AI_MODEL ?? "openai/gpt-5.4",
       system: SPATIAL_THINKING_SYSTEM,
       output: Output.object({ schema: patchResponseSchema }),
       prompt: `現在の思考状態へ差分commandだけを返してください。\n\n状態:\n${JSON.stringify(context)}\n\nユーザー発言:\n${message}`,
     });
     return Response.json(output);
-  } catch {
+  } catch (error) {
+    console.error("AI Gateway graph patch failed; using local fallback", error);
     return Response.json(createLocalPatch(message, context.activeBranchId));
   }
 }
