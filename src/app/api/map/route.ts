@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { gateway, generateText, Output } from "ai";
 import { z } from "zod";
 
 import { createLocalInitialMap } from "@/ai/local-fallback";
@@ -18,10 +18,16 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const { output } = await generateText({
-      model: process.env.AI_MODEL ?? "openai/gpt-5.4",
+      model: gateway(process.env.AI_MODEL ?? "anthropic/claude-haiku-4.5"),
       system: SPATIAL_THINKING_SYSTEM,
       output: Output.object({ schema: initialMapResponseSchema }),
       prompt: `次の入力から初期思考グラフを生成してください。\n\n${body.data.input}`,
+      providerOptions: {
+        gateway: {
+          models: ["google/gemini-2.5-flash-lite"],
+          tags: ["feature:initial-map", "product:spatial-thinking"],
+        },
+      },
     });
     return Response.json(output);
   } catch (error) {

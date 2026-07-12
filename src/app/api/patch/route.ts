@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { gateway, generateText, Output } from "ai";
 import { z } from "zod";
 
 import { createLocalPatch } from "@/ai/local-fallback";
@@ -29,10 +29,16 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const { output } = await generateText({
-      model: process.env.AI_MODEL ?? "openai/gpt-5.4",
+      model: gateway(process.env.AI_MODEL ?? "anthropic/claude-haiku-4.5"),
       system: SPATIAL_THINKING_SYSTEM,
       output: Output.object({ schema: patchResponseSchema }),
       prompt: `現在の思考状態へ差分commandだけを返してください。\n\n状態:\n${JSON.stringify(context)}\n\nユーザー発言:\n${message}`,
+      providerOptions: {
+        gateway: {
+          models: ["google/gemini-2.5-flash-lite"],
+          tags: ["feature:graph-patch", "product:spatial-thinking"],
+        },
+      },
     });
     return Response.json(output);
   } catch (error) {
