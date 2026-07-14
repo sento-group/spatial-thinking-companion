@@ -11,16 +11,25 @@ import {
   useNodesState,
   type Edge,
   type NodeMouseHandler,
+  type OnNodeDrag,
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { projectGraph } from "@/mapping/project";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { ThinkingNode, type ThinkingFlowNode } from "@/components/workspace/thinking-node";
 
 const nodeTypes = { thinking: ThinkingNode };
+const clusterColors = ["#0d7c86", "#8c5f2d", "#6d5478", "#446b43", "#9b4b3f", "#4c648c"];
+
+function clusterColor(id: string | null): string | undefined {
+  if (!id) return undefined;
+  let hash = 0;
+  for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return clusterColors[hash % clusterColors.length];
+}
 
 const relationLabels: Record<string, string> = {
   causes: "原因",
@@ -43,22 +52,52 @@ export function GraphCanvas() {
   const selectedNodeId = useWorkspaceStore((state) => state.selectedNodeId);
   const selectNode = useWorkspaceStore((state) => state.selectNode);
   const moveNode = useWorkspaceStore((state) => state.moveNode);
-  const projection = useMemo(() => projectGraph(graph, view, viewState), [graph, view, viewState]);
+  const edgeScope = useWorkspaceStore((state) => state.edgeScope);
+  const relationDraft = useWorkspaceStore((state) => state.relationDraft);
+  const collapsedNodeIds = useWorkspaceStore((state) => state.collapsedNodeIds);
+  const setRelationTarget = useWorkspaceStore((state) => state.setRelationTarget);
+  const projection = useMemo(
+    () => projectGraph(graph, view, viewState, collapsedNodeIds),
+    [collapsedNodeIds, graph, view, viewState],
+  );
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const projectedNodes = useMemo<ThinkingFlowNode[]>(
     () =>
-      projection.nodes.map((item) => ({
-        id: item.id,
-        type: "thinking",
-        position: item.position,
-        data: { item: item.node },
-        selected: item.id === selectedNodeId,
-      })),
-    [projection.nodes, selectedNodeId],
+      projection.nodes.map((item) => {
+        const relationRole = relationDraft?.from === item.id
+          ? "source" as const
+          : relationDraft?.to === item.id
+            ? "target" as const
+            : undefined;
+        return {
+          id: item.id,
+          type: "thinking",
+          position: item.position,
+          data: {
+            item: item.node,
+            challengeCount: graph.challenges.filter(
+              (challenge) => challenge.targetNodeId === item.id
+                && challenge.status !== "resolved"
+                && challenge.status !== "parked",
+            ).length,
+            relationRole,
+            depth: item.depth,
+            clusterColor: clusterColor(item.clusterId),
+            hasChildren: item.hasChildren,
+            collapsed: collapsedNodeIds.includes(item.id),
+            hiddenDescendantCount: item.hiddenDescendantCount,
+          },
+          selected: item.id === selectedNodeId,
+        };
+      }),
+    [collapsedNodeIds, graph.challenges, projection.nodes, relationDraft, selectedNodeId],
   );
   const projectedEdges = useMemo<Edge[]>(
     () =>
-      projection.edges.map((edge) => ({
+      projection.edges
+        .filter((edge) => edgeScope === "all" || edge.hierarchy)
+        .map((edge) => ({
         id: edge.id,
         source: edge.source,
         target: edge.target,
@@ -73,7 +112,7 @@ export function GraphCanvas() {
         },
         labelStyle: { fill: "#556170", fontSize: 10, fontFamily: "var(--font-geist-mono)" },
       })),
-    [projection.edges],
+    [edgeScope, projection.edges],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState<ThinkingFlowNode>(projectedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(projectedEdges);
@@ -89,10 +128,26 @@ export function GraphCanvas() {
     return () => window.cancelAnimationFrame(frame);
   }, [flow, projection.nodes, view]);
 
-  const handleNodeClick: NodeMouseHandler<ThinkingFlowNode> = (_, node) => selectNode(node.id);
+  const focusCanvas = useCallback(() => canvasRef.current?.focus({ preventScroll: true }), []);
+  const handleNodeClick: NodeMouseHandler<ThinkingFlowNode> = useCallback((_, node) => {
+    focusCanvas();
+    if (relationDraft && !relationDraft.to && relationDraft.from !== node.id) {
+      setRelationTarget(node.id);
+      return;
+    }
+    selectNode(node.id);
+  }, [focusCanvas, relationDraft, selectNode, setRelationTarget]);
+  const handleNodeDragStop: OnNodeDrag<ThinkingFlowNode> = useCallback(
+    (_, node) => moveNode(node.id, node.position),
+    [moveNode],
+  );
+  const handlePaneClick = useCallback(() => {
+    focusCanvas();
+    selectNode(null);
+  }, [focusCanvas, selectNode]);
 
   return (
-    <div className="paper-grid h-full w-full" aria-label="思考の盤面">
+    <div ref={canvasRef} className={`paper-grid h-full w-full${relationDraft ? " is-connecting" : ""}`} aria-label="思考の盤面" tabIndex={0}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -101,8 +156,8 @@ export function GraphCanvas() {
         onEdgesChange={onEdgesChange}
         onInit={setFlow}
         onNodeClick={handleNodeClick}
-        onNodeDragStop={(_, node) => moveNode(node.id, node.position)}
-        onPaneClick={() => selectNode(null)}
+        onNodeDragStop={handleNodeDragStop}
+        onPaneClick={handlePaneClick}
         fitView
         fitViewOptions={{ padding: 0.24 }}
         minZoom={0.2}

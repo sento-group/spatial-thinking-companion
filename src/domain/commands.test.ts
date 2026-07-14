@@ -21,6 +21,7 @@ describe("applyCommands", () => {
             status: "active",
             parentId: "software",
             facts: [],
+            sourceIds: ["source-fixture"],
             userLocked: false,
           },
         },
@@ -91,6 +92,26 @@ describe("applyCommands", () => {
 
     expect(graph.nodes.some((node) => node.id === "software")).toBe(false);
     expect(graph.edges.some((edge) => edge.from === "software" || edge.to === "software")).toBe(false);
+    expect(graph.challenges.some((challenge) => challenge.targetNodeId === "software")).toBe(false);
+  });
+
+  it("検証課題への回答を履歴として保持する", () => {
+    const { graph } = applyCommands(
+      cloneFixture(),
+      [{
+        type: "challenge.update",
+        id: "challenge-adoption",
+        changes: {
+          status: "resolved",
+          response: "週次会議で必ず開く",
+          impactSummary: "利用習慣を導入条件へ追加",
+        },
+      }],
+      { source: "human" },
+    );
+
+    expect(graph.challenges.find((challenge) => challenge.id === "challenge-adoption"))
+      .toMatchObject({ status: "resolved", response: "週次会議で必ず開く" });
   });
 
   it("node統合でedgeをtargetへ付け替える", () => {
@@ -108,5 +129,20 @@ describe("applyCommands", () => {
 
     expect(graph.nodes.some((node) => node.id === "software")).toBe(false);
     expect(graph.edges.every((edge) => edge.from !== "software" && edge.to !== "software")).toBe(true);
+    expect(graph.challenges.find((challenge) => challenge.id === "challenge-adoption")?.targetNodeId)
+      .toBe("repeatability");
+    expect(graph.nodes.find((node) => node.id === "repeatability")?.sourceIds)
+      .toContain("source-fixture");
+  });
+
+  it("追加入力をsourceとして原文のまま保持する", () => {
+    const source = { id: "source-follow-up", kind: "message" as const, text: "まず社内で試す" };
+    const { graph } = applyCommands(
+      cloneFixture(),
+      [{ type: "source.add", source }],
+      { source: "human" },
+    );
+
+    expect(graph.sources).toContainEqual(source);
   });
 });

@@ -8,6 +8,7 @@ const validGraph = {
     statement: "チームが同じ地図を見ながら判断できる",
     successCondition: "次の一歩が決まる",
   },
+  sources: [{ id: "source-1", kind: "initial_input", text: "同じ地図で考える" }],
   activeBranchId: "question",
   recommendedView: "roadmap",
   nodes: [
@@ -22,6 +23,7 @@ const validGraph = {
       status: "active",
       parentId: null,
       facts: [],
+      sourceIds: ["source-1"],
       userLocked: true,
     },
     {
@@ -35,6 +37,7 @@ const validGraph = {
       status: "active",
       parentId: "root",
       facts: [],
+      sourceIds: ["source-1"],
       userLocked: false,
     },
   ],
@@ -49,6 +52,17 @@ const validGraph = {
   unresolvedQuestions: ["どう具現化するか"],
   contradictions: [],
   blindSpots: [],
+  challenges: [
+    {
+      id: "question-1",
+      targetNodeId: "question",
+      kind: "question",
+      statement: "どう具現化するか",
+      status: "open",
+      response: null,
+      impactSummary: null,
+    },
+  ],
   promotionQueue: [],
   parkingLot: [],
 };
@@ -56,6 +70,23 @@ const validGraph = {
 describe("parseThinkingGraph", () => {
   it("正しいThinkingGraphを受理する", () => {
     expect(parseThinkingGraph(validGraph)).toEqual(validGraph);
+  });
+
+  it("旧データの未解決事項をnodeに紐づく検証課題へ移行する", () => {
+    const legacyGraph: Record<string, unknown> = structuredClone(validGraph);
+    delete legacyGraph.challenges;
+    const parsed = parseThinkingGraph({
+      ...legacyGraph,
+      unresolvedQuestions: ["誰が最初に使うか"],
+    });
+
+    expect(parsed.challenges).toEqual([
+      expect.objectContaining({
+        targetNodeId: "question",
+        kind: "question",
+        statement: "誰が最初に使うか",
+      }),
+    ]);
   });
 
   it("存在しないnodeを参照するedgeを拒否する", () => {
@@ -94,5 +125,16 @@ describe("parseThinkingGraph", () => {
     };
 
     expect(() => parseThinkingGraph(graph)).toThrow();
+  });
+
+  it("存在しない原文を参照するnodeを拒否する", () => {
+    const graph = {
+      ...validGraph,
+      nodes: validGraph.nodes.map((node) =>
+        node.id === "question" ? { ...node, sourceIds: ["missing-source"] } : node,
+      ),
+    };
+
+    expect(() => parseThinkingGraph(graph)).toThrow(/存在しない原文/);
   });
 });

@@ -13,16 +13,18 @@
 
 - URL: `/`
 - 左: セッション、新規作成、チャット履歴、入力欄
-- 中央: Roadmap / Spatial / Relationの盤面
-- 右: 選択ノード、分析レイヤー、履歴、出力
+- 中央: 主ルートと全関係を切り替える1枚の思考マップ
+- 右: 選択ノード、ノード別検証課題、構造差分、出力
 - 初期状態: 新規入力またはサンプルセッションを選べる
 - 主要操作:
   - テキスト送信
-  - 推奨ビュー確認・切替
+  - 主ルート / 全関係レイヤー切替
   - ノード選択・編集・追加・削除・移動・ロック
   - 関係追加・変更・削除
   - 枝の展開・折り畳み
   - AI差分の確認・適用・取消
+  - 反論・盲点・前提への回答と、構造変更案の確認
+  - Tabで子、Enterで分岐、Shift+Rで型付き関係線を追加
   - Undo / Redo
   - AIブリーフ・JSON・Markdown・XMind出力
 
@@ -52,6 +54,7 @@ AI失敗時は既存盤面を変更せず`ready`へ戻る。
 ### ThinkingGraph invariants
 
 - node IDとedge IDは一意
+- source IDは一意で、node.sourceIdsは存在するsourceだけを参照する
 - edgeのfrom/toは存在するnodeを参照する
 - parentIdは自己参照せず、parent chainにcycleを作らない
 - activeBranchIdはnullまたは存在するnode
@@ -60,24 +63,18 @@ AI失敗時は既存盤面を変更せず`ready`へ戻る。
 - userLocked nodeへのAI update/remove/moveはapproval対象
 - node削除時は接続edgeを同じtransactionで削除する
 - node merge時はsourceへのedgeをtargetへ付け替え、重複edgeを除去する
-
-### Mapping selection
-
-| Signal | Recommended view |
-|---|---|
-| 手順、目的、依存、行動 | roadmap |
-| 過去・現在・未来、具体と抽象の混線 | time_abstraction |
-| 誰が得る/損する、短期と長期、将来世代 | time_social_reach |
-| 因果、前提、矛盾、代替、循環 | relation |
-
-同点時はroadmapを既定とし、他ビューを補助候補として表示する。
+- challengeは存在するtargetNodeIdを参照する
+- node削除時は紐づくchallengeを削除し、merge時はtargetへ付け替える
+- 同じ親の表示順はnode.orderで決定する
 
 ### Projection
 
-- Roadmap: parentIdをtreeへ投影する。cross edgeは薄い関係線として表示する
-- Time × Abstraction: timeをX、abstractionをYへ決定的に配置する
-- Time × Social Reach: timeをX、socialReachをYへ決定的に配置する
-- Relation: typed edgeを主線としてDAG layoutする。cycleがあっても表示できる
+- 思考マップ: parentIdとorderを主ルートとして安定配置する
+- ルート直下の枝を描画派生クラスタとして色分けする
+- collapsedNodeIds配下の子孫と接続線を投影対象から外す
+- 主ルート表示: parent hierarchyだけを表示する
+- 全関係表示: 主ルートにtyped cross edgeを重ねる
+- time / abstraction / socialReachはAI分析と出力用の属性として保持し、独立ビューにはしない
 - viewStateにuser position lockがあるnodeは自動配置で動かさない
 
 ### Command application
@@ -94,7 +91,7 @@ AI patchへ送る内容:
 1. north star
 2. active branchからrootまでのancestor
 3. active branch配下の最大2階層
-4. unresolved / contradiction / promotion queue
+4. 選択ノードに紐づくchallenge / contradiction / promotion queue
 5. 直近10 commands
 6. 盤面全体の短いsummary
 

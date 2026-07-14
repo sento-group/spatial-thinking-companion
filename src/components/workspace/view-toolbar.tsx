@@ -1,44 +1,45 @@
 "use client";
 
-import { Redo2, RotateCcw, Undo2 } from "lucide-react";
+import { GitBranch, Link2, Redo2, RotateCcw, Undo2, X } from "lucide-react";
 
-import type { ViewKind } from "@/domain/schema";
 import { useWorkspaceStore } from "@/store/workspace-store";
 
-const views: Array<{ value: ViewKind; short: string; label: string }> = [
-  { value: "roadmap", short: "A", label: "ロードマップ" },
-  { value: "time_abstraction", short: "B", label: "時間 × 抽象度" },
-  { value: "time_social_reach", short: "C", label: "時間 × 対象範囲" },
-  { value: "relation", short: "D", label: "関係グラフ" },
-];
-
 export function ViewToolbar() {
-  const view = useWorkspaceStore((state) => state.view);
-  const setView = useWorkspaceStore((state) => state.setView);
+  const graph = useWorkspaceStore((state) => state.graph);
+  const selectedNodeId = useWorkspaceStore((state) => state.selectedNodeId);
+  const edgeScope = useWorkspaceStore((state) => state.edgeScope);
+  const setEdgeScope = useWorkspaceStore((state) => state.setEdgeScope);
+  const relationDraft = useWorkspaceStore((state) => state.relationDraft);
+  const beginRelation = useWorkspaceStore((state) => state.beginRelation);
+  const cancelRelation = useWorkspaceStore((state) => state.cancelRelation);
   const undo = useWorkspaceStore((state) => state.undo);
   const redo = useWorkspaceStore((state) => state.redo);
   const reset = useWorkspaceStore((state) => state.reset);
   const canUndo = useWorkspaceStore((state) => state.past.length > 0);
   const canRedo = useWorkspaceStore((state) => state.future.length > 0);
+  const relationSource = graph.nodes.find((node) => node.id === relationDraft?.from);
 
   return (
     <div className="view-toolbar" role="toolbar" aria-label="盤面ビュー">
-      <div className="view-tabs" role="tablist" aria-label="マッピング手法">
-        {views.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            role="tab"
-            aria-selected={view === item.value}
-            className={view === item.value ? "is-active" : undefined}
-            onClick={() => setView(item.value)}
-          >
-            <span className="font-data">{item.short}</span>
-            {item.label}
+      <div className="map-toolbar-main">
+        <div className="map-title"><GitBranch size={14} /><span>思考マップ</span></div>
+        <div className="map-layer-toggle" aria-label="表示する関係">
+          <button type="button" className={edgeScope === "main" ? "is-active" : undefined} aria-pressed={edgeScope === "main"} onClick={() => setEdgeScope("main")}>主ルート</button>
+          <button type="button" className={edgeScope === "all" ? "is-active" : undefined} aria-pressed={edgeScope === "all"} onClick={() => setEdgeScope("all")}>全関係</button>
+        </div>
+        {relationDraft ? (
+          <div className="relation-mode-status" role="status">
+            <span>「{relationSource?.statement ?? "選択ノード"}」から接続</span>
+            <button type="button" onClick={cancelRelation} aria-label="線の追加を中止"><X size={13} /></button>
+          </div>
+        ) : (
+          <button type="button" className="relation-mode-button" onClick={beginRelation} disabled={!selectedNodeId} title="Shift + R">
+            <Link2 size={14} />線を追加 <kbd>⇧R</kbd>
           </button>
-        ))}
+        )}
       </div>
       <div className="history-controls">
+        <span className="shortcut-hint"><kbd>Tab</kbd> 子　<kbd>Enter</kbd> 分岐</span>
         <button type="button" onClick={undo} disabled={!canUndo} aria-label="元に戻す"><Undo2 size={15} /></button>
         <button type="button" onClick={redo} disabled={!canRedo} aria-label="やり直す"><Redo2 size={15} /></button>
         <button type="button" onClick={reset} aria-label="初期状態へ戻す"><RotateCcw size={15} /></button>

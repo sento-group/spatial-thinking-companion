@@ -11,6 +11,7 @@ export interface StoredSession {
   view: ViewKind;
   viewState: ViewState;
   messages: WorkspaceMessage[];
+  collapsedNodeIds?: string[];
   updatedAt: string;
 }
 

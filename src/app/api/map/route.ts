@@ -1,4 +1,4 @@
-import { gateway, generateText, Output } from "ai";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { createLocalInitialMap } from "@/ai/local-fallback";
@@ -8,6 +8,8 @@ import {
   normalizeInitialMapResponse,
 } from "@/ai/schemas";
 import { SPATIAL_THINKING_SYSTEM } from "@/ai/prompt";
+import { reasoningModel, reasoningProviderOptions } from "@/ai/models";
+import { createSourceFragment } from "@/ai/source-context";
 
 const requestSchema = z.object({ input: z.string().min(1).max(12_000) });
 
@@ -16,22 +18,26 @@ export async function POST(request: Request): Promise<Response> {
   const body = requestSchema.safeParse(await request.json());
   if (!body.success) return Response.json({ error: "入力を確認してください" }, { status: 400 });
 
+  const source = createSourceFragment(body.data.input, "initial_input");
   try {
     const { output } = await generateText({
-      model: gateway(process.env.AI_MODEL ?? "anthropic/claude-haiku-4.5"),
+      model: reasoningModel(),
       system: SPATIAL_THINKING_SYSTEM,
       output: Output.object({ schema: initialMapDraftResponseSchema }),
-      prompt: `次の入力から初期思考グラフを生成してください。\n\n${body.data.input}`,
-      providerOptions: {
-        gateway: {
-          models: ["google/gemini-2.5-flash-lite"],
-          tags: ["feature:initial-map", "product:spatial-thinking"],
-        },
-      },
+      prompt: `次の逐語入力から初期思考グラフを生成してください。
+この原文が正本です。内容を落とさず、本筋・制約・保留・不確実性を保持してください。
+生成する全ノードのsourceIdsへ、根拠となるsource IDを入れてください。
+
+sourceTurns:
+${JSON.stringify([source])}
+
+逐語入力:
+${body.data.input}`,
+      providerOptions: reasoningProviderOptions("initial-map", "high"),
     });
-    return Response.json(normalizeInitialMapResponse(output));
+    return Response.json({ ...normalizeInitialMapResponse(output, [source]), degraded: false });
   } catch (error) {
     console.error("AI Gateway initial map failed; using local fallback", error);
-    return Response.json(createLocalInitialMap(body.data.input));
+    return Response.json(createLocalInitialMap(body.data.input, source));
   }
 }

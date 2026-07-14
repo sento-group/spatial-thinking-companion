@@ -5,13 +5,16 @@
 ## できること
 
 - 短い相談文から、本筋・現在地・次の一歩を持つ初期地図を生成
-- 入力に合わせて、ロードマップ / 時間×抽象度 / 時間×対象範囲 / 関係グラフを推奨
-- 同じ正本データを4つのビューで再描画
+- 主ルートと型付き関係線を、1枚の思考マップ上で切り替え
+- ノードごとの反論・盲点・前提へ回答し、構造変更をプレビューして適用
 - ノードの追加・編集・削除・移動・固定、現在枝の選択
+- Tabで子、Enterで分岐、Shift+Rで関係線を追加
 - AIによる差分更新と、固定ノード変更時の承認ゲート
 - Undo / Redoとブラウザ内への自動保存
 - AIブリーフ / JSON / Markdown / XMindへの出力
 - AI設定がない環境でも動くローカル補助モード
+- 初回・追加入力の原文をノードへ紐づけて保持
+- 枝ごとの軽量クラスタ表示と折り畳み
 
 ## 起動
 
@@ -32,7 +35,7 @@ npm run lint
 npm run build
 ```
 
-テストには、正本スキーマ、差分コマンド、人間編集保護、マッピング選択、4ビュー投影、JSON往復、各種出力、100ノード・150関係のストレスケースが含まれます。
+テストには、正本スキーマ、検証課題、差分コマンド、人間編集保護、JSON往復、各種出力、100ノード・150関係のストレスケースが含まれます。
 
 ## 設計の中心
 
@@ -40,15 +43,19 @@ npm run build
 
 ```text
 入力 / 継続対話
-  → Mapping Recommender
+  → 原文（逐語・source ID）
   → ThinkingGraph（正本）
+  → ノード別Challenge（反論・盲点・前提）
   → GraphCommand（差分）
-  → View Projector
+  → 主ルート / 全関係レイヤー
   → React Flow
   → AI Brief / JSON / Markdown / XMind
 ```
 
+意味判断はClaude Sonnet 5、参照整合性とlocked保護はTypeScriptが担当します。軽量モデルは、将来ラベル短縮など意味を変えない補助処理へ限定します。
+
 詳細は [requirements.md](./requirements.md)、[architecture.md](./architecture.md)、[spec.md](./spec.md)、[ADR](./docs/adr/0001-separate-thinking-graph-from-renderer.md) を参照してください。
+公開後の改善候補は [docs/post-launch-improvement-backlog.md](./docs/post-launch-improvement-backlog.md) に分離しています。
 
 ## 現在の境界
 

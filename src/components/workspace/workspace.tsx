@@ -15,7 +15,15 @@ export function Workspace() {
   const view = useWorkspaceStore((state) => state.view);
   const viewState = useWorkspaceStore((state) => state.viewState);
   const messages = useWorkspaceStore((state) => state.messages);
+  const collapsedNodeIds = useWorkspaceStore((state) => state.collapsedNodeIds);
   const hydrate = useWorkspaceStore((state) => state.hydrate);
+  const addChild = useWorkspaceStore((state) => state.addChild);
+  const addSibling = useWorkspaceStore((state) => state.addSibling);
+  const deleteSelected = useWorkspaceStore((state) => state.deleteSelected);
+  const beginRelation = useWorkspaceStore((state) => state.beginRelation);
+  const cancelRelation = useWorkspaceStore((state) => state.cancelRelation);
+  const undo = useWorkspaceStore((state) => state.undo);
+  const redo = useWorkspaceStore((state) => state.redo);
   const hydrated = useRef(false);
 
   useEffect(() => {
@@ -37,11 +45,61 @@ export function Workspace() {
         view,
         viewState,
         messages,
+        collapsedNodeIds,
         updatedAt: new Date().toISOString(),
       });
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [graph, messages, view, viewState]);
+  }, [collapsedNodeIds, graph, messages, view, viewState]);
+
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement
+        && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      ) return;
+
+      const activeElement = document.activeElement;
+      const canvasFocused = activeElement instanceof HTMLElement
+        && Boolean(activeElement.closest(".canvas-stage"));
+      if (!canvasFocused || event.repeat) return;
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        addChild();
+        return;
+      }
+      if (event.key === "Enter" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        addSibling();
+        return;
+      }
+      if (event.key.toLowerCase() === "r" && event.shiftKey && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        beginRelation();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelRelation();
+        return;
+      }
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        deleteSelected();
+      }
+    }
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [addChild, addSibling, beginRelation, cancelRelation, deleteSelected, redo, undo]);
 
   return (
     <main className="workspace-shell">

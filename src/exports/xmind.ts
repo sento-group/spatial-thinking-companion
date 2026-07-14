@@ -18,11 +18,21 @@ export async function createXMindBlob(graph: ThinkingGraph): Promise<Blob> {
     siblings.push(node);
     children.set(node.parentId, siblings);
   }
+  for (const siblings of children.values()) {
+    siblings.sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER));
+  }
 
   function topic(node: ThinkingNode): Record<string, unknown> {
     const descendants = (children.get(node.id) ?? []).map(topic);
     const notes = [
       ...node.facts.map((fact) => `· ${fact}`),
+      ...node.sourceIds
+        .map((sourceId) => graph.sources.find((source) => source.id === sourceId))
+        .filter((source) => Boolean(source))
+        .map((source) => `原文: ${source!.text}`),
+      ...graph.challenges
+        .filter((challenge) => challenge.targetNodeId === node.id && challenge.status !== "parked")
+        .map((challenge) => `[${challenge.status}] ${challenge.statement}${challenge.response ? ` / ${challenge.response}` : ""}`),
       `type: ${node.type}`,
       `time: ${node.time}`,
       `abstraction: ${node.abstraction}`,

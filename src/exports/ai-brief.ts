@@ -23,6 +23,14 @@ export function createAiBrief(graph: ThinkingGraph, request = "この思考状�
   const actions = graph.nodes
     .filter((node) => node.type === "action" && node.status !== "resolved")
     .map((node) => node.statement);
+  const openChallenges = graph.challenges
+    .filter((challenge) => challenge.status !== "resolved" && challenge.status !== "parked")
+    .map((challenge) => {
+      const target = graph.nodes.find((node) => node.id === challenge.targetNodeId)?.statement ?? challenge.targetNodeId;
+      const response = challenge.response ? ` / 回答: ${challenge.response}` : "";
+      return `[${challenge.kind}] ${target}: ${challenge.statement}${response}`;
+    });
+  const sourceNotes = graph.sources.map((source) => `[${source.kind}] ${source.text}`);
 
   return [
     "# 本筋",
@@ -30,7 +38,7 @@ export function createAiBrief(graph: ThinkingGraph, request = "この思考状�
     "",
     "# 現在地",
     active ? `- 現在枝: ${active.statement}` : "- 現在枝: 未選択",
-    `- 推奨ビュー: ${graph.recommendedView}`,
+    "- 表示: 1枚の思考マップ",
     "",
     "# 決定済み",
     list(decisions),
@@ -39,13 +47,16 @@ export function createAiBrief(graph: ThinkingGraph, request = "この思考状�
     list([...facts, ...assumptions]),
     "",
     "# 未解決の問い",
-    list(graph.unresolvedQuestions),
+    list(openChallenges),
     "",
     "# Parking Lot",
     list(graph.parkingLot),
     "",
     "# 関係・依存",
     list(relations),
+    "",
+    "# 原文",
+    list(sourceNotes),
     "",
     "# 次の一歩",
     list(actions),

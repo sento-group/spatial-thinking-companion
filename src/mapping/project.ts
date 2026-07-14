@@ -1,5 +1,3 @@
-import dagre from "@dagrejs/dagre";
-
 import type { ThinkingGraph, ThinkingNode, ViewKind } from "@/domain/schema";
 
 export interface Position {
@@ -17,6 +15,10 @@ export interface ProjectedNode {
   id: string;
   position: Position;
   node: ThinkingNode;
+  depth: number;
+  clusterId: string | null;
+  hasChildren: boolean;
+  hiddenDescendantCount: number;
 }
 
 export interface ProjectedEdge {
@@ -68,7 +70,9 @@ function applyLockedPositions(
   });
 }
 
-function projectRoadmap(graph: ThinkingGraph): ProjectedNode[] {
+type BaseProjectedNode = Omit<ProjectedNode, "depth" | "clusterId" | "hasChildren" | "hiddenDescendantCount">;
+
+function projectRoadmap(graph: ThinkingGraph): BaseProjectedNode[] {
   const children = new Map<string | null, ThinkingNode[]>();
   for (const node of graph.nodes) {
     const siblings = children.get(node.parentId) ?? [];
@@ -76,7 +80,10 @@ function projectRoadmap(graph: ThinkingGraph): ProjectedNode[] {
     children.set(node.parentId, siblings);
   }
   for (const siblings of children.values()) {
-    siblings.sort((a, b) => a.statement.localeCompare(b.statement, "ja"));
+    siblings.sort((a, b) => {
+      const orderDelta = (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER);
+      return orderDelta || a.statement.localeCompare(b.statement, "ja");
+    });
   }
 
   let row = 0;
@@ -111,7 +118,7 @@ function projectRoadmap(graph: ThinkingGraph): ProjectedNode[] {
 function projectSpatial(
   graph: ThinkingGraph,
   view: "time_abstraction" | "time_social_reach",
-): ProjectedNode[] {
+): BaseProjectedNode[] {
   const buckets = new Map<string, number>();
   return graph.nodes.map((node) => {
     const y = view === "time_abstraction" ? ABSTRACTION_Y[node.abstraction] : SOCIAL_Y[node.socialReach];
@@ -125,24 +132,6 @@ function projectSpatial(
         x: TIME_X[node.time] + (offset % 3) * 34,
         y: y + Math.floor(offset / 3) * 68,
       },
-    };
-  });
-}
-
-function projectRelation(graph: ThinkingGraph): ProjectedNode[] {
-  const layout = new dagre.graphlib.Graph();
-  layout.setGraph({ rankdir: "LR", nodesep: 54, ranksep: 130, marginx: 40, marginy: 40 });
-  layout.setDefaultEdgeLabel(() => ({}));
-  for (const node of graph.nodes) layout.setNode(node.id, { width: 210, height: 72 });
-  for (const edge of graph.edges) layout.setEdge(edge.from, edge.to);
-  dagre.layout(layout);
-
-  return graph.nodes.map((node) => {
-    const position = layout.node(node.id) as { x: number; y: number };
-    return {
-      id: node.id,
-      node,
-      position: { x: position.x - 105, y: position.y - 36 },
     };
   });
 }
@@ -165,7 +154,15 @@ function projectEdges(graph: ThinkingGraph, view: ViewKind): ProjectedEdge[] {
     hierarchy: false,
   }));
   if (view === "roadmap") return hierarchyEdges;
-  if (view === "relation") return crossEdges;
+  if (view === "relation") {
+    const seen = new Set<string>();
+    return [...hierarchyEdges, ...crossEdges].filter((edge) => {
+      const signature = `${edge.source}:${edge.target}:${edge.relation}`;
+      if (seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    });
+  }
   return crossEdges.length ? crossEdges : hierarchyEdges;
 }
 
@@ -173,14 +170,59 @@ export function projectGraph(
   graph: ThinkingGraph,
   view: ViewKind,
   viewState: ViewState,
+  collapsedNodeIds: string[] = [],
 ): GraphProjection {
-  let nodes: ProjectedNode[];
-  if (view === "roadmap") nodes = projectRoadmap(graph);
-  else if (view === "relation") nodes = projectRelation(graph);
-  else nodes = projectSpatial(graph, view);
+  const children = new Map<string, ThinkingNode[]>();
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  for (const node of graph.nodes) {
+    if (!node.parentId) continue;
+    const siblings = children.get(node.parentId) ?? [];
+    siblings.push(node);
+    children.set(node.parentId, siblings);
+  }
+
+  function descendantsOf(id: string): string[] {
+    return (children.get(id) ?? []).flatMap((child) => [child.id, ...descendantsOf(child.id)]);
+  }
+
+  const hidden = new Set(collapsedNodeIds.flatMap(descendantsOf));
+  const visibleIds = new Set(graph.nodes.filter((node) => !hidden.has(node.id)).map((node) => node.id));
+  const visibleGraph: ThinkingGraph = {
+    ...graph,
+    nodes: graph.nodes.filter((node) => visibleIds.has(node.id)),
+    edges: graph.edges.filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to)),
+    challenges: graph.challenges.filter((challenge) => visibleIds.has(challenge.targetNodeId)),
+  };
+
+  function nodeMeta(node: ThinkingNode) {
+    let depth = 0;
+    let current = node;
+    let clusterId: string | null = null;
+    const seen = new Set<string>();
+    while (current.parentId && !seen.has(current.id)) {
+      seen.add(current.id);
+      const parent = byId.get(current.parentId);
+      if (!parent) break;
+      depth += 1;
+      clusterId = current.id;
+      current = parent;
+    }
+    return {
+      depth,
+      clusterId: depth === 0 ? null : clusterId,
+      hasChildren: (children.get(node.id)?.length ?? 0) > 0,
+      hiddenDescendantCount: collapsedNodeIds.includes(node.id) ? descendantsOf(node.id).length : 0,
+    };
+  }
+
+  let baseNodes: BaseProjectedNode[];
+  if (view === "roadmap") baseNodes = projectRoadmap(visibleGraph);
+  else if (view === "relation") baseNodes = projectRoadmap(visibleGraph);
+  else baseNodes = projectSpatial(visibleGraph, view);
+  const nodes: ProjectedNode[] = baseNodes.map((item) => ({ ...item, ...nodeMeta(item.node) }));
 
   return {
     nodes: applyLockedPositions(nodes, view, viewState),
-    edges: projectEdges(graph, view),
+    edges: projectEdges(visibleGraph, view),
   };
 }

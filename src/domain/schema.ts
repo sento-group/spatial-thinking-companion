@@ -20,6 +20,15 @@ export const socialReachSchema = z.enum([
   "future_generations",
 ]);
 export const nodeStatusSchema = z.enum(["active", "resolved", "parked"]);
+export const sourceKindSchema = z.enum(["initial_input", "message", "challenge_response"]);
+export const challengeKindSchema = z.enum([
+  "blind_spot",
+  "objection",
+  "assumption",
+  "question",
+  "contradiction",
+]);
+export const challengeStatusSchema = z.enum(["open", "answered", "resolved", "parked"]);
 export const viewKindSchema = z.enum([
   "roadmap",
   "time_abstraction",
@@ -40,6 +49,12 @@ export const relationSchema = z.enum([
   "example_of",
 ]);
 
+export const sourceFragmentSchema = z.object({
+  id: z.string().min(1),
+  kind: sourceKindSchema,
+  text: z.string().min(1),
+});
+
 export const thinkingNodeSchema = z.object({
   id: z.string().min(1),
   statement: z.string().min(1),
@@ -50,7 +65,9 @@ export const thinkingNodeSchema = z.object({
   certainty: z.number().min(0).max(1),
   status: nodeStatusSchema,
   parentId: z.string().min(1).nullable(),
+  order: z.number().int().nonnegative().optional(),
   facts: z.array(z.string()),
+  sourceIds: z.array(z.string()).default([]),
   userLocked: z.boolean(),
 });
 
@@ -61,12 +78,23 @@ export const thinkingEdgeSchema = z.object({
   relation: relationSchema,
 });
 
+export const thinkingChallengeSchema = z.object({
+  id: z.string().min(1),
+  targetNodeId: z.string().min(1),
+  kind: challengeKindSchema,
+  statement: z.string().min(1),
+  status: challengeStatusSchema,
+  response: z.string().nullable(),
+  impactSummary: z.string().nullable(),
+});
+
 export const thinkingGraphDraftSchema = z.object({
   schemaVersion: z.literal(1),
   northStar: z.object({
     statement: z.string().min(1),
     successCondition: z.string(),
   }),
+  sources: z.array(sourceFragmentSchema).default([]),
   activeBranchId: z.string().min(1).nullable(),
   recommendedView: viewKindSchema,
   nodes: z.array(thinkingNodeSchema).min(1),
@@ -74,12 +102,24 @@ export const thinkingGraphDraftSchema = z.object({
   unresolvedQuestions: z.array(z.string()),
   contradictions: z.array(z.string()),
   blindSpots: z.array(z.string()),
+  challenges: z.array(thinkingChallengeSchema).default([]),
   promotionQueue: z.array(z.string()),
   parkingLot: z.array(z.string()),
 });
 
 export const thinkingGraphSchema = thinkingGraphDraftSchema.superRefine((graph, context) => {
   const nodeIds = new Set<string>();
+  const sourceIds = new Set<string>();
+  for (const source of graph.sources) {
+    if (sourceIds.has(source.id)) {
+      context.addIssue({
+        code: "custom",
+        message: `重複した原文IDです: ${source.id}`,
+        path: ["sources"],
+      });
+    }
+    sourceIds.add(source.id);
+  }
   for (const node of graph.nodes) {
     if (nodeIds.has(node.id)) {
       context.addIssue({
@@ -89,6 +129,15 @@ export const thinkingGraphSchema = thinkingGraphDraftSchema.superRefine((graph, 
       });
     }
     nodeIds.add(node.id);
+    for (const sourceId of node.sourceIds) {
+      if (!sourceIds.has(sourceId)) {
+        context.addIssue({
+          code: "custom",
+          message: `存在しない原文を参照しています: ${node.id} -> ${sourceId}`,
+          path: ["nodes"],
+        });
+      }
+    }
   }
 
   const edgeIds = new Set<string>();
@@ -106,6 +155,25 @@ export const thinkingGraphSchema = thinkingGraphDraftSchema.superRefine((graph, 
         code: "custom",
         message: `存在しないノードを参照するエッジです: ${edge.id}`,
         path: ["edges"],
+      });
+    }
+  }
+
+  const challengeIds = new Set<string>();
+  for (const challenge of graph.challenges) {
+    if (challengeIds.has(challenge.id)) {
+      context.addIssue({
+        code: "custom",
+        message: `重複した検証課題IDです: ${challenge.id}`,
+        path: ["challenges"],
+      });
+    }
+    challengeIds.add(challenge.id);
+    if (!nodeIds.has(challenge.targetNodeId)) {
+      context.addIssue({
+        code: "custom",
+        message: `存在しないノードを参照する検証課題です: ${challenge.id}`,
+        path: ["challenges"],
       });
     }
   }
@@ -148,10 +216,47 @@ export const thinkingGraphSchema = thinkingGraphDraftSchema.superRefine((graph, 
 
 export type ThinkingNode = z.infer<typeof thinkingNodeSchema>;
 export type ThinkingEdge = z.infer<typeof thinkingEdgeSchema>;
+export type ThinkingChallenge = z.infer<typeof thinkingChallengeSchema>;
+export type SourceFragment = z.infer<typeof sourceFragmentSchema>;
 export type ThinkingGraph = z.infer<typeof thinkingGraphDraftSchema>;
 export type ViewKind = z.infer<typeof viewKindSchema>;
 export type Relation = z.infer<typeof relationSchema>;
 
 export function parseThinkingGraph(input: unknown): ThinkingGraph {
-  return thinkingGraphSchema.parse(input);
+  const graph = thinkingGraphSchema.parse(input);
+  if (graph.challenges.length > 0) return graph;
+
+  const targetNodeId = graph.activeBranchId ?? graph.nodes[0]?.id;
+  if (!targetNodeId) return graph;
+
+  graph.challenges = [
+    ...graph.unresolvedQuestions.map((statement, index): ThinkingChallenge => ({
+      id: `legacy-question-${index + 1}`,
+      targetNodeId,
+      kind: "question",
+      statement,
+      status: "open",
+      response: null,
+      impactSummary: null,
+    })),
+    ...graph.blindSpots.map((statement, index): ThinkingChallenge => ({
+      id: `legacy-blind-spot-${index + 1}`,
+      targetNodeId,
+      kind: "blind_spot",
+      statement,
+      status: "open",
+      response: null,
+      impactSummary: null,
+    })),
+    ...graph.contradictions.map((statement, index): ThinkingChallenge => ({
+      id: `legacy-contradiction-${index + 1}`,
+      targetNodeId,
+      kind: "contradiction",
+      statement,
+      status: "open",
+      response: null,
+      impactSummary: null,
+    })),
+  ];
+  return graph;
 }

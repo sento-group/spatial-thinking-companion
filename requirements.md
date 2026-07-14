@@ -18,9 +18,9 @@
 
 #### やること
 
-- 短い依頼または継続チャットから初期ロードマップを生成する
-- 入力の性質に応じて適切なマッピング手法を選択・提案する
-- 同じ思考グラフをロードマップ、空間マップ、関係グラフで再描画する
+- 短い依頼または継続チャットから初期思考マップを生成する
+- 主ルートと型付き関係を1枚の盤面で切り替える
+- 各ノードの反論・盲点・前提へ回答し、構造変更案を確認して適用する
 - 人間によるノード・関係・配置編集を次のAI対話へ反映する
 - 下位変更から上位論点への昇格、未解決、盲点、Parking Lotを保持する
 - 盤面をAIブリーフ、JSON、Markdown、XMindへ変換する
@@ -41,10 +41,11 @@
 ```text
 短い依頼を入力
   → AIが問いの種類と構造を判定
-  → 適切なマッピング手法で初期ロードマップを生成
+  → 1枚の思考マップを生成
   → 人が盤面を直接編集
-  → AIが編集結果と意図を踏まえて対話・差分更新
-  → 別のビューへ再描画
+  → ノードごとの反論・盲点・前提へ回答
+  → AIが順序・前提・関係の差分を提案
+  → 人が確認して構造へ適用
   → AIブリーフまたは実行Planへ変換
 ```
 
@@ -53,15 +54,15 @@
 | # | 機能 | 優先度 | 詳細 |
 |---|---|---|---|
 | F-01 | テキスト・チャット入力 | Must | 短文、長文、継続対話を受け付ける |
-| F-02 | マッピング手法選択 | Must | 入力から推奨ビューを選び、選択理由を短く示す。ユーザーが変更可能 |
+| F-02 | 関係レイヤー切替 | Must | 主ルートと全関係を、同じ配置を保って切り替える |
 | F-03 | 初期思考グラフ生成 | Must | 本筋、ノード、型付き関係、現在枝、未解決を生成する |
-| F-04 | ロードマップビュー | Must | XMind型の包含階層を既定表示し、展開・折り畳み・直接編集を可能にする |
-| F-05 | 空間マップ | Must | Time × AbstractionとTime × Social Reachを切り替えて表示する |
-| F-06 | 関係グラフ | Must | 因果、依存、手段、前提、矛盾、代替などの型付き関係を表示する |
+| F-04 | 思考マップ | Must | XMind型の包含階層を主ルートにし、型付き関係線を同じ盤面へ重ねる |
+| F-05 | ノード検証 | Must | 反論・盲点・前提・矛盾を対象ノードへ紐づけ、回答できる |
+| F-06 | 構造変更プレビュー | Must | 回答による順序・親子・前提・関係線の変更を適用前に示す |
 | F-07 | 人間編集 | Must | ノード追加・編集・削除・移動・統合、関係追加・変更、現在枝選択を行える |
 | F-08 | AI差分パッチ | Must | 初回後は現在枝中心の差分更新とし、変更箇所を示してUndo可能にする |
 | F-09 | 人間編集優先 | Must | 人が確定・移動・ロックした内容をAIが無断で上書きしない |
-| F-10 | 分析レイヤー | Must | 決定、未解決、盲点、矛盾、昇格候補、Parking Lotを横断表示する |
+| F-10 | 検証パネル | Must | 選択ノードの検証課題、回答、構造差分、解決履歴を表示する |
 | F-11 | 上位への昇格 | Must | 下位変更が主体・依存・戦略を変える場合、上位論点候補を作る |
 | F-12 | AIブリーフ | Must | 本筋、現在地、決定、根拠、未解決、保留、関係、次の一歩、AIへの依頼をMarkdown化する |
 | F-13 | ローカル保存 | Must | 思考セッション、履歴、現在枝、描画状態をブラウザへ保存・復元する |
@@ -69,14 +70,15 @@
 | F-15 | Markdown出力 | Should | 人間が読みやすい階層文書を出力する |
 | F-16 | XMind出力 | Should | 既存の和島ワークフローへ持ち出せる `.xmind` を生成する |
 | F-17 | 履歴・Undo/Redo | Must | AI更新と人間編集を取り消し・再適用できる |
-| F-18 | 手法拡張 | Should | Dialogue/IBIS、Causal Loop、Assumption Map等を後から追加できる戦略インターフェースを持つ |
+| F-18 | キーボード操作 | Must | Tabで子、Enterで分岐、Shift+Rで型付き関係線を追加する |
+| F-19 | 原文対応 | Must | 初回・追加入力を逐語保存し、生成・更新ノードから参照できる |
+| F-20 | 枝の折り畳み | Must | 子孫を一時的に隠し、非表示件数を表示して再展開できる |
 
-### MVPで実装するマッピング手法
+### MVPで実装する盤面
 
-1. Roadmap / Mind Map: 目的から論点・手段・行動への包含階層
-2. Time × Abstraction: 過去・現在・未来 × 具体・構造・抽象
-3. Time × Social Reach: 短期・中期・長期 × 自己・組織・市場・社会・将来世代
-4. Typed Relation Graph: 因果・依存・手段・前提・矛盾・代替の非階層関係
+1. 主ルート: 目的から論点・手段・行動への包含階層
+2. 全関係: 主ルートに因果・依存・手段・前提・矛盾・代替を重ねる
+3. Time / Abstraction / Social Reachは分析属性として保持し、独立ビューにはしない
 
 ## 4. 思考グラフの正本データ
 
@@ -86,7 +88,7 @@ thinking_state:
     statement: string
     success_condition: string
   active_branch_id: string | null
-  recommended_view: roadmap | time_abstraction | time_social_reach | relation
+  recommended_view: relation
   nodes:
     - id: string
       statement: string
@@ -97,8 +99,14 @@ thinking_state:
       certainty: number
       status: active | resolved | parked
       parent_id: string | null
+      order: number
       facts: string[]
       user_locked: boolean
+      source_ids: string[]
+  sources:
+    - id: string
+      kind: initial_input | message | challenge_response
+      text: string
   edges:
     - id: string
       from: string
@@ -107,6 +115,14 @@ thinking_state:
   unresolved_questions: string[]
   contradictions: string[]
   blind_spots: string[]
+  challenges:
+    - id: string
+      target_node_id: string
+      kind: blind_spot | objection | assumption | question | contradiction
+      statement: string
+      status: open | answered | resolved | parked
+      response: string | null
+      impact_summary: string | null
   promotion_queue: string[]
   parking_lot: string[]
 ```
@@ -116,6 +132,8 @@ thinking_state:
 ## 5. AIの責務境界
 
 - 初回は全体の初期グラフを生成する
+- 意味判断はClaude Sonnet 5、参照検証・正規化はTypeScriptが担当する
+- 逐語の原文を正本としてSonnet 5へ渡し、内部要約だけで判断しない
 - 以降は現在枝、上位要約、未解決を中心に差分パッチを返す
 - 本筋の変更と全体再構成は提案に留め、人間承認後に適用する
 - 人間がロックしたノード・関係・配置を上書きしない
@@ -171,15 +189,17 @@ thinking_state:
 
 ## 9. 受入条件
 
-1. 短い実課題を入力すると、本筋と初期ロードマップが生成される
-2. 推奨マッピング手法と選択理由が表示される
-3. 同じ思考グラフを3ビューで切り替えても意味が矛盾しない
+1. 短い実課題を入力すると、本筋と初期思考マップが生成される
+2. 主ルートと全関係を切り替えてもノード配置が飛ばない
+3. 各検証課題が対象ノードへ紐づき、盤面上で件数を認識できる
 4. 人間が移動・統合・削除・確定した後、次のAI応答がその編集を保持する
 5. AI更新をUndoし、更新前の状態へ戻せる
 6. JSON保存・再読込で、盤面、現在枝、履歴が復元される
 7. AIブリーフを別のAIへ渡すと、本筋、決定、未解決、次の一歩を再現できる
 8. 100ノード・150関係で主要操作が破綻しない
 9. sento.groupメンバー3名が説明なしで実課題を入力し、行動可能な次の一歩まで到達できる
+10. 検証課題へ回答すると構造差分が提示され、適用・却下・Undoができる
+11. Tab・Enter・Shift+Rでノードと関係線を追加できる
 
 ## 10. 制約・前提条件
 
@@ -195,6 +215,6 @@ thinking_state:
 |---|---|---|---|
 | React Flow / Excalidraw | UI・同期 | 同一100ノード・編集往復prototype | どちらも主要操作を満たさない場合、描画構成を再検討 |
 | 初期AI provider | 品質・費用 | 同一プロンプトと差分schemaで比較 | 構造化出力が安定しない場合、provider/modelを変更 |
-| 自動レイアウト | 大規模性能 | Roadmap・relation・spatial別にstress test | 100ノードで判読不能ならMVPを通さない |
+| 自動レイアウト | 大規模性能 | 主ルートと全関係でstress test | 100ノードで判読不能ならMVPを通さない |
 | 人間編集の意図推定 | 中心価値 | 移動・統合・削除の具体シナリオtest | 編集後のAI理解が再現しない場合、明示操作UIへ寄せる |
 | レート制限方式 | 費用 | Vercel環境で公式手段を確認 | 公開URLから無制限呼出できる状態では公開しない |

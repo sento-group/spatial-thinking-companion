@@ -3,9 +3,12 @@ import {
   type ThinkingEdge,
   type ThinkingGraph,
   type ThinkingNode,
+  type ThinkingChallenge,
+  type SourceFragment,
 } from "@/domain/schema";
 
 export type GraphCommand =
+  | { type: "source.add"; source: SourceFragment }
   | { type: "node.add"; node: ThinkingNode }
   | { type: "node.update"; id: string; changes: Partial<Omit<ThinkingNode, "id">> }
   | { type: "node.remove"; id: string }
@@ -13,6 +16,9 @@ export type GraphCommand =
   | { type: "edge.add"; edge: ThinkingEdge }
   | { type: "edge.update"; id: string; changes: Partial<Omit<ThinkingEdge, "id">> }
   | { type: "edge.remove"; id: string }
+  | { type: "challenge.add"; challenge: ThinkingChallenge }
+  | { type: "challenge.update"; id: string; changes: Partial<Omit<ThinkingChallenge, "id">> }
+  | { type: "challenge.remove"; id: string }
   | { type: "branch.activate"; id: string }
   | { type: "graph.promote"; nodeId: string; reason: string };
 
@@ -69,6 +75,12 @@ function deduplicateEdges(edges: ThinkingEdge[]): ThinkingEdge[] {
 
 function applyCommand(graph: ThinkingGraph, command: GraphCommand): void {
   switch (command.type) {
+    case "source.add": {
+      if (!graph.sources.some((source) => source.id === command.source.id)) {
+        graph.sources.push(structuredClone(command.source));
+      }
+      return;
+    }
     case "node.add": {
       if (graph.nodes.some((node) => node.id === command.node.id)) {
         throw new Error(`ノードIDが重複しています: ${command.node.id}`);
@@ -86,6 +98,9 @@ function applyCommand(graph: ThinkingGraph, command: GraphCommand): void {
       graph.nodes = graph.nodes.filter((node) => node.id !== command.id);
       graph.edges = graph.edges.filter(
         (edge) => edge.from !== command.id && edge.to !== command.id,
+      );
+      graph.challenges = graph.challenges.filter(
+        (challenge) => challenge.targetNodeId !== command.id,
       );
       for (const node of graph.nodes) {
         if (node.parentId === command.id) node.parentId = null;
@@ -107,6 +122,15 @@ function applyCommand(graph: ThinkingGraph, command: GraphCommand): void {
       for (const node of graph.nodes) {
         if (node.parentId && sourceIds.has(node.parentId)) node.parentId = target.id;
       }
+      for (const challenge of graph.challenges) {
+        if (sourceIds.has(challenge.targetNodeId)) challenge.targetNodeId = target.id;
+      }
+      target.sourceIds = [...new Set([
+        ...target.sourceIds,
+        ...graph.nodes
+          .filter((node) => sourceIds.has(node.id))
+          .flatMap((node) => node.sourceIds),
+      ])];
       graph.nodes = graph.nodes.filter((node) => !sourceIds.has(node.id));
       if (graph.activeBranchId && sourceIds.has(graph.activeBranchId)) {
         graph.activeBranchId = target.id;
@@ -131,6 +155,27 @@ function applyCommand(graph: ThinkingGraph, command: GraphCommand): void {
         throw new Error(`エッジが存在しません: ${command.id}`);
       }
       graph.edges = graph.edges.filter((edge) => edge.id !== command.id);
+      return;
+    }
+    case "challenge.add": {
+      if (graph.challenges.some((challenge) => challenge.id === command.challenge.id)) {
+        throw new Error(`検証課題IDが重複しています: ${command.challenge.id}`);
+      }
+      findNode(graph, command.challenge.targetNodeId);
+      graph.challenges.push(structuredClone(command.challenge));
+      return;
+    }
+    case "challenge.update": {
+      const challenge = graph.challenges.find((candidate) => candidate.id === command.id);
+      if (!challenge) throw new Error(`検証課題が存在しません: ${command.id}`);
+      Object.assign(challenge, structuredClone(command.changes));
+      return;
+    }
+    case "challenge.remove": {
+      if (!graph.challenges.some((challenge) => challenge.id === command.id)) {
+        throw new Error(`検証課題が存在しません: ${command.id}`);
+      }
+      graph.challenges = graph.challenges.filter((challenge) => challenge.id !== command.id);
       return;
     }
     case "branch.activate": {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeInitialMapResponse } from "@/ai/schemas";
+import { normalizeInitialMapResponse, patchResponseSchema } from "@/ai/schemas";
 import { cloneFixture } from "@/domain/fixtures";
 
 describe("normalizeInitialMapResponse", () => {
@@ -26,5 +26,16 @@ describe("normalizeInitialMapResponse", () => {
     expect(normalized.graph.nodes[1].parentId).toBeNull();
     expect(normalized.graph.edges.some((edge) => edge.id === "dangling")).toBe(false);
     expect(normalized.graph.nodes.find((node) => node.id === "root")?.userLocked).toBe(true);
+  });
+});
+
+describe("patchResponseSchema", () => {
+  it("AIがcommandsだけ返しても安全な承認付き提案へ補完する", () => {
+    const parsed = patchResponseSchema.parse({ commands: [] });
+    expect(parsed).toMatchObject({
+      requiresApproval: true,
+      restructureProposal: null,
+    });
+    expect(parsed.reply).toContain("構造変更案");
   });
 });

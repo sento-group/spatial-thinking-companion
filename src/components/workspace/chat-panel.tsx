@@ -4,6 +4,7 @@ import { ArrowUp, LoaderCircle } from "lucide-react";
 import { FormEvent, useState } from "react";
 
 import type { InitialMapResponse, PatchResponse } from "@/ai/schemas";
+import { buildPatchContext } from "@/ai/context";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { useWorkspaceStore } from "@/store/workspace-store";
 
@@ -35,28 +36,23 @@ export function ChatPanel() {
         const data = (await response.json()) as InitialMapResponse;
         setGraph({ ...data.graph, recommendedView: data.recommendedView }, `${data.reply}\n\n_${data.recommendationReason}_`);
       } else {
-        const active = graph.nodes.find((node) => node.id === graph.activeBranchId);
-        const activeNodes = graph.nodes.filter(
-          (node) => node.id === graph.activeBranchId || node.parentId === graph.activeBranchId || node.id === active?.parentId,
-        );
         const response = await fetch("/api/patch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message,
-            context: {
-              northStar: graph.northStar.statement,
-              activeBranchId: graph.activeBranchId,
-              activeNodes,
-              unresolvedQuestions: graph.unresolvedQuestions,
-              contradictions: graph.contradictions,
-              promotionQueue: graph.promotionQueue,
-            },
+            context: buildPatchContext(graph, [
+              ...messages,
+              { id: `pending-${Date.now()}`, role: "user", content: message },
+            ]),
           }),
         });
         if (!response.ok) throw new Error("盤面を更新できませんでした");
         const data = (await response.json()) as PatchResponse;
-        applyAiCommands(data.commands, data.reply);
+        applyAiCommands(
+          data.commands,
+          data.degraded ? `⚠️ 簡易モードで追記しました。\n\n${data.reply}` : data.reply,
+        );
       }
     } catch (error) {
       addMessage({

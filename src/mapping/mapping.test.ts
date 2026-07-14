@@ -63,6 +63,30 @@ describe("projectGraph", () => {
     });
   });
 
+  it("兄弟ノードをorder順に配置する", () => {
+    const graph = cloneFixture();
+    graph.nodes.find((node) => node.id === "repeatability")!.order = 2;
+    graph.nodes.push({
+      id: "first-branch",
+      statement: "先に検討する分岐",
+      type: "question",
+      time: "present",
+      abstraction: "structure",
+      socialReach: "organization",
+      certainty: 0.5,
+      status: "active",
+      parentId: "root",
+      order: 1,
+      facts: [],
+      sourceIds: [],
+      userLocked: false,
+    });
+
+    const projection = projectGraph(graph, "relation", {});
+    expect(projection.nodes.find((node) => node.id === "first-branch")!.position.y)
+      .toBeLessThan(projection.nodes.find((node) => node.id === "repeatability")!.position.y);
+  });
+
   it("100ノード・150関係を全ビューへ投影できる", () => {
     const graph = cloneFixture();
     graph.nodes = Array.from({ length: 100 }, (_, index) => ({
@@ -76,6 +100,7 @@ describe("projectGraph", () => {
       status: "active",
       parentId: index === 0 ? null : `stress-${Math.floor((index - 1) / 3)}`,
       facts: [],
+      sourceIds: [],
       userLocked: false,
     }));
     graph.edges = Array.from({ length: 150 }, (_, index) => ({
@@ -92,5 +117,14 @@ describe("projectGraph", () => {
       expect(projection.edges.length).toBeGreaterThanOrEqual(view === "roadmap" ? 99 : 150);
       expect(projection.nodes.every((node) => Number.isFinite(node.position.x) && Number.isFinite(node.position.y))).toBe(true);
     }
+  });
+
+  it("枝を折り畳むと子孫と接続edgeを投影しない", () => {
+    const graph = cloneFixture();
+    const projection = projectGraph(graph, "relation", {}, ["repeatability"]);
+
+    expect(projection.nodes.map((node) => node.id)).toEqual(["root", "repeatability"]);
+    expect(projection.nodes.find((node) => node.id === "repeatability")?.hiddenDescendantCount).toBe(1);
+    expect(projection.edges.every((edge) => edge.source !== "software" && edge.target !== "software")).toBe(true);
   });
 });
